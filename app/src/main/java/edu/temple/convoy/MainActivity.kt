@@ -1,7 +1,6 @@
 package edu.temple.convoy
 
 import android.os.Bundle
-import android.util.MutableBoolean
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -56,28 +55,15 @@ import com.google.maps.android.compose.GoogleMap
 import edu.temple.convoy.ui.theme.ConvoyTheme
 import kotlin.getValue
 
-enum class Page {
-    Login,
-    Register,
-    Map,
 
-}
-data class MainActivityViewModel(
-    val page: MutableState<Page> = mutableStateOf(Page.Login),
-
-    var login: Login = Login(),
-    var register: Register = Register(),
-    var map: Map = Map(),
-
-): ViewModel() {
-
+sealed class UIState: ViewModel() {
     data class Login(
         val username: MutableState<String> = mutableStateOf(""),
         val password: MutableState<String> = mutableStateOf(""),
 
         val usernameInvalid: MutableState<Boolean> = mutableStateOf(false),
         val passwordInvalid: MutableState<Boolean> = mutableStateOf(false),
-    )
+    ) : UIState()
     data class Register(
         val fullname: MutableState<String> = mutableStateOf(""),
         val username: MutableState<String> = mutableStateOf(""),
@@ -88,10 +74,14 @@ data class MainActivityViewModel(
         val usernameInvalid: MutableState<Boolean> = mutableStateOf(false),
         val passwordInvalid: MutableState<Boolean> = mutableStateOf(false),
         val confirmPasswordInvalid: MutableState<Boolean> = mutableStateOf(false),
-    )
+    ) : UIState()
     data class Map(
         val webtoken: String? = null,
-    )
+    ) : UIState()
+}
+
+class MainActivityViewModel: ViewModel() {
+    var ui: MutableState<UIState> = mutableStateOf(UIState.Login())
 }
 
 class MainActivity : ComponentActivity() {
@@ -108,25 +98,26 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MainContent(vm: MainActivityViewModel) {
+    val currentUI = vm.ui.value
     MaterialTheme {
-        when (vm.page.value) {
-            Page.Login -> LoginPage(
-                vm.login,
-                { vm.page.value = Page.Map },
-                { vm.page.value = Page.Register }
+        when (currentUI) {
+            is UIState.Login -> LoginPage(
+                currentUI,
+                { vm.ui.value = UIState.Map() },
+                { vm.ui.value = UIState.Register() }
             )
-            Page.Register -> RegisterPage(
-                vm.register,
-                {vm.page.value = Page.Login},
-                {vm.page.value = Page.Map}
+            is UIState.Register -> RegisterPage(
+                currentUI,
+                {vm.ui.value = UIState.Login()},
+                {vm.ui.value = UIState.Map()}
             )
-            Page.Map -> MapPage(vm.map)
+            is UIState.Map -> MapPage(currentUI)
         }
     }
 }
 
 @Composable
-fun LoginPage(state: MainActivityViewModel.Login, onTokenReceipt: (String) -> Unit, onSwitchToRegister: () -> Unit) {
+fun LoginPage(state: UIState.Login, onTokenReceipt: (String) -> Unit, onSwitchToRegister: () -> Unit) {
     val ctx = LocalContext.current
     fun submit() {
         var valid = true
@@ -216,7 +207,7 @@ fun LoginPage(state: MainActivityViewModel.Login, onTokenReceipt: (String) -> Un
 }
 
 @Composable
-fun RegisterPage(state: MainActivityViewModel.Register, onSwitchToLogin: () -> Unit, onRegisterSuccess: () -> Unit) {
+fun RegisterPage(state: UIState.Register, onSwitchToLogin: () -> Unit, onRegisterSuccess: () -> Unit) {
     fun submit() {
         var valid = true
 
@@ -344,8 +335,8 @@ fun RegisterPage(state: MainActivityViewModel.Register, onSwitchToLogin: () -> U
 }
 
 @Composable
-fun MapPage(state: MainActivityViewModel.Map) {
-    GoogleMap {  }
+fun MapPage(state: UIState.Map) {
+    GoogleMap { }
 }
 
 
