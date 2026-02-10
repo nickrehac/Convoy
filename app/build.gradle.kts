@@ -1,9 +1,21 @@
+import org.jetbrains.kotlin.konan.properties.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    //id("com.google.android.libraries.mapsplatform.secrets-gradle-plugin")
+}
+
+val localProperties = Properties()
+val localPropertiesFile = File(rootDir, "secrets.properties")
+if (localPropertiesFile.exists() && localPropertiesFile.isFile) {
+    localPropertiesFile.inputStream().use {
+        localProperties.load(it)
+    }
 }
 
 android {
+
     namespace = "edu.temple.convoy"
     compileSdk {
         version = release(36)
@@ -11,7 +23,7 @@ android {
 
     defaultConfig {
         applicationId = "edu.temple.convoy"
-        minSdk = 29
+        minSdk = 31
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
@@ -26,6 +38,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            resValue("string", "google_maps_api_key", localProperties.getProperty("MAPS_API_KEY"))
+        }
+        debug {
+            resValue("string", "google_maps_api_key", localProperties.getProperty("MAPS_API_KEY"))
         }
     }
     compileOptions {
@@ -34,6 +50,7 @@ android {
     }
     buildFeatures {
         compose = true
+        resValues = true
     }
 }
 
@@ -48,6 +65,9 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.material3)
     implementation(libs.maps.compose)
+    implementation(libs.play.services.location)
+    implementation(libs.volley)
+    implementation(libs.androidx.compose.material.icons.extended)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

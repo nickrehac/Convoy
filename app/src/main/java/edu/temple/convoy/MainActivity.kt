@@ -1,13 +1,32 @@
 package edu.temple.convoy
 
+import android.Manifest
+import android.annotation.SuppressLint
+import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
+import android.location.LocationRequest
 import android.os.Bundle
+import android.os.Looper
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.expandIn
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideIn
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
@@ -19,7 +38,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.GroupAdd
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.NoAdultContent
 import androidx.compose.material3.Button
+import androidx.compose.material3.FabPosition
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -48,11 +74,33 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.content.PermissionChecker
 import androidx.core.graphics.drawable.IconCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import com.android.volley.Request
+import com.android.volley.Response
+import com.android.volley.toolbox.JsonObjectRequest
+import com.android.volley.toolbox.JsonRequest
+import com.android.volley.toolbox.StringRequest
+import com.android.volley.toolbox.Volley
+//import com.google.android.gms.location.FusedLocationProviderClient
+//import com.google.android.gms.location.LocationRequest
+//import com.google.android.gms.location.LocationServices
+//import com.google.android.gms.location.Priority
+import com.google.android.gms.maps.GoogleMapOptions
+import com.google.android.gms.maps.LocationSource
+import com.google.android.gms.maps.model.CameraPosition
+import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.MapProperties
+import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.rememberCameraPositionState
+import com.google.maps.android.compose.rememberMarkerState
+import com.google.maps.android.compose.rememberUpdatedMarkerState
 import edu.temple.convoy.ui.theme.ConvoyTheme
+import org.json.JSONObject
+import java.security.Permission
 import kotlin.getValue
 
 
@@ -63,20 +111,35 @@ sealed class UIState: ViewModel() {
 
         val usernameInvalid: MutableState<Boolean> = mutableStateOf(false),
         val passwordInvalid: MutableState<Boolean> = mutableStateOf(false),
+
+        val errorMessage: MutableState<String?> = mutableStateOf(null),
+
+        val submitting: MutableState<Boolean> = mutableStateOf(false),
     ) : UIState()
     data class Register(
-        val fullname: MutableState<String> = mutableStateOf(""),
+        val firstname: MutableState<String> = mutableStateOf(""),
+        val lastname: MutableState<String> = mutableStateOf(""),
         val username: MutableState<String> = mutableStateOf(""),
         val password: MutableState<String> = mutableStateOf(""),
         val confirmPassword: MutableState<String> = mutableStateOf(""),
 
-        val fullnameInvalid: MutableState<Boolean> = mutableStateOf(false),
+        val firstnameInvalid: MutableState<Boolean> = mutableStateOf(false),
+        val lastnameInvalid: MutableState<Boolean> = mutableStateOf(false),
         val usernameInvalid: MutableState<Boolean> = mutableStateOf(false),
         val passwordInvalid: MutableState<Boolean> = mutableStateOf(false),
         val confirmPasswordInvalid: MutableState<Boolean> = mutableStateOf(false),
+
+        val errorMessage: MutableState<String?> = mutableStateOf(null),
+
+        val submitting: MutableState<Boolean> = mutableStateOf(false),
     ) : UIState()
     data class Map(
-        val webtoken: String? = null,
+        val username: String,
+        val webtoken: String,
+
+        val FABOpen: MutableState<Boolean> = mutableStateOf(false),
+        val location: MutableState<Location?> = mutableStateOf(null),
+        var locationListener: LocationSource.OnLocationChangedListener? = null,
     ) : UIState()
 }
 
@@ -87,9 +150,41 @@ class MainActivityViewModel: ViewModel() {
 class MainActivity : ComponentActivity() {
     val viewmodel: MainActivityViewModel by viewModels<MainActivityViewModel>()
 
+    fun verifyLocationPermissions(): Boolean {
+        if(checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_DENIED) {
+            requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), 1)
+            return false
+        }
+        return true
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String?>,
+        grantResults: IntArray,
+        deviceId: Int
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults, deviceId)
+        if(requestCode == 1 && grantResults[0] == PackageManager.PERMISSION_GRANTED) startLocationUpdates()
+    }
+
+    @SuppressLint("MissingPermission")
+    fun startLocationUpdates() {
+        val locationManager = getSystemService(LocationManager::class.java)
+        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 5000, 1.0f,
+            {it
+                Log.d("GPS", it.toString())
+                (viewmodel.ui.value as? UIState.Map)?.location?.value = it
+            }, Looper.getMainLooper())
+    }
+
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        if(verifyLocationPermissions()) startLocationUpdates()
+
         setContent {
             MainContent(viewmodel)
         }
@@ -103,13 +198,13 @@ fun MainContent(vm: MainActivityViewModel) {
         when (currentUI) {
             is UIState.Login -> LoginPage(
                 currentUI,
-                { vm.ui.value = UIState.Map() },
-                { vm.ui.value = UIState.Register() }
+                { vm.ui.value = UIState.Register() },
+                {user, token -> vm.ui.value = UIState.Map(username = user, webtoken = token) }
             )
             is UIState.Register -> RegisterPage(
                 currentUI,
                 {vm.ui.value = UIState.Login()},
-                {vm.ui.value = UIState.Map()}
+                {user, token -> vm.ui.value = UIState.Map(username = user, webtoken = token)}
             )
             is UIState.Map -> MapPage(currentUI)
         }
@@ -117,9 +212,11 @@ fun MainContent(vm: MainActivityViewModel) {
 }
 
 @Composable
-fun LoginPage(state: UIState.Login, onTokenReceipt: (String) -> Unit, onSwitchToRegister: () -> Unit) {
+fun LoginPage(state: UIState.Login, onSwitchToRegister: () -> Unit, onTokenReceipt: (String, String) -> Unit) {
     val ctx = LocalContext.current
+    val loginUrl = "https://kamorris.com/lab/convoy/account.php"
     fun submit() {
+        state.errorMessage.value = null
         var valid = true
 
         state.usernameInvalid.value = if (
@@ -138,8 +235,35 @@ fun LoginPage(state: UIState.Login, onTokenReceipt: (String) -> Unit, onSwitchTo
             true
         }
 
+
         if (valid) {
-            onTokenReceipt("boing boing")
+            state.submitting.value = true
+            Volley.newRequestQueue(ctx).add(object: StringRequest(
+                Request.Method.POST,
+                loginUrl,
+                {
+                    val json = JSONObject(it)
+                    val status = json.getString("status")
+                    if(status == "SUCCESS") {
+                        onTokenReceipt(state.username.value, json.getString("session_key"))
+                    } else {
+                        state.errorMessage.value = json.getString("message");
+                    }
+                    state.submitting.value = false
+                },
+                {
+                    state.errorMessage.value = "Unknown Error. Try Again"
+                    state.submitting.value = false
+                }
+            ) {
+                override fun getParams(): Map<String?, String?> {
+                    return HashMap<String?, String?>().apply {
+                        put("action", "LOGIN")
+                        put("username", state.username.value)
+                        put("password", state.password.value)
+                    }
+                }
+            })
         }
     }
 
@@ -186,6 +310,9 @@ fun LoginPage(state: UIState.Login, onTokenReceipt: (String) -> Unit, onSwitchTo
                     ),
                     isError = state.passwordInvalid.value
                 )
+                state.errorMessage.value?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error)
+                }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceEvenly,
@@ -197,7 +324,7 @@ fun LoginPage(state: UIState.Login, onTokenReceipt: (String) -> Unit, onSwitchTo
                         color = MaterialTheme.colorScheme.primary,
                         textDecoration = TextDecoration.Underline
                     )
-                    Button({ submit() }) {
+                    Button({ submit() }, enabled = !state.submitting.value ) {
                         Text("Log In")
                     }
                 }
@@ -207,13 +334,24 @@ fun LoginPage(state: UIState.Login, onTokenReceipt: (String) -> Unit, onSwitchTo
 }
 
 @Composable
-fun RegisterPage(state: UIState.Register, onSwitchToLogin: () -> Unit, onRegisterSuccess: () -> Unit) {
+fun RegisterPage(state: UIState.Register, onSwitchToLogin: () -> Unit, onTokenReceipt: (String, String) -> Unit) {
+    val registerUrl = "https://kamorris.com/lab/convoy/account.php"
+    val ctx = LocalContext.current
     fun submit() {
+        state.errorMessage.value = null
         var valid = true
 
-        state.fullnameInvalid.value = if (
-            state.fullname.value.length > 1
+        state.firstnameInvalid.value = if (
+            state.firstname.value.length > 1
             ) false
+        else {
+            valid = false
+            true
+        }
+
+        state.lastnameInvalid.value = if (
+            state.lastname.value.length > 1
+        ) false
         else {
             valid = false
             true
@@ -244,7 +382,35 @@ fun RegisterPage(state: UIState.Register, onSwitchToLogin: () -> Unit, onRegiste
         }
 
         if (valid) {
-            onRegisterSuccess()
+            state.submitting.value = true
+            Volley.newRequestQueue(ctx).add(object: StringRequest(
+                Method.POST,
+                registerUrl,
+                {
+                    val json = JSONObject(it)
+                    val status = json.getString("status")
+                    if(status == "SUCCESS") {
+                        onTokenReceipt(state.username.value, json.getString("session_key"))
+                    } else {
+                        state.errorMessage.value = json.getString("message");
+                    }
+                    state.submitting.value = false
+                },
+                {
+                    state.errorMessage.value = "Unknown Error. Try Again"
+                    state.submitting.value = false
+                }
+            ) {
+                override fun getParams(): Map<String?, String?> {
+                    return HashMap<String?, String?>().apply {
+                        put("action", "REGISTER")
+                        put("username", state.username.value)
+                        put("password", state.password.value)
+                        put("firstname", state.firstname.value)
+                        put("lastname", state.lastname.value)
+                    }
+                }
+            })
         }
     }
 
@@ -263,16 +429,30 @@ fun RegisterPage(state: UIState.Register, onSwitchToLogin: () -> Unit, onRegiste
             ) {
                 Text("Register:")
                 TextField(
-                    state.fullname.value,
+                    state.firstname.value,
                     {
-                        state.fullname.value = it
+                        state.firstname.value = it
                     },
                     singleLine = true,
-                    label = { Text("Full Name") },
+                    label = { Text("First Name") },
                     keyboardOptions = KeyboardOptions(
                         KeyboardCapitalization.Words,
                         imeAction = ImeAction.Next
-                    )
+                    ),
+                    isError = state.firstnameInvalid.value,
+                )
+                TextField(
+                    state.lastname.value,
+                    {
+                        state.lastname.value = it
+                    },
+                    singleLine = true,
+                    label = { Text("Last Name") },
+                    keyboardOptions = KeyboardOptions(
+                        KeyboardCapitalization.Words,
+                        imeAction = ImeAction.Next
+                    ),
+                    isError = state.lastnameInvalid.value
                 )
                 TextField(
                     state.username.value,
@@ -284,7 +464,8 @@ fun RegisterPage(state: UIState.Register, onSwitchToLogin: () -> Unit, onRegiste
                     keyboardOptions = KeyboardOptions(
                         KeyboardCapitalization.None,
                         imeAction = ImeAction.Next
-                    )
+                    ),
+                    isError = state.usernameInvalid.value,
                 )
                 TextField(
                     state.password.value,
@@ -297,7 +478,7 @@ fun RegisterPage(state: UIState.Register, onSwitchToLogin: () -> Unit, onRegiste
                         keyboardType = KeyboardType.Password,
                         imeAction = ImeAction.Next
                     ),
-                    isError = state.passwordInvalid.value
+                    isError = state.passwordInvalid.value,
                 )
                 TextField(
                     state.confirmPassword.value,
@@ -312,8 +493,12 @@ fun RegisterPage(state: UIState.Register, onSwitchToLogin: () -> Unit, onRegiste
                     ),
                     keyboardActions = KeyboardActions(
                         onDone = { submit() }
-                    )
+                    ),
+                    isError = state.confirmPasswordInvalid.value,
                 )
+                state.errorMessage.value?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error)
+                }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceEvenly,
@@ -325,7 +510,7 @@ fun RegisterPage(state: UIState.Register, onSwitchToLogin: () -> Unit, onRegiste
                         color = MaterialTheme.colorScheme.primary,
                         textDecoration = TextDecoration.Underline
                     )
-                    Button({ submit() }) {
+                    Button({ submit() }, enabled = !state.submitting.value ) {
                         Text("Register")
                     }
                 }
@@ -336,7 +521,76 @@ fun RegisterPage(state: UIState.Register, onSwitchToLogin: () -> Unit, onRegiste
 
 @Composable
 fun MapPage(state: UIState.Map) {
-    GoogleMap { }
+    val cameraPositionState = rememberCameraPositionState {
+        val latlng: LatLng = state.location.value?.let{LatLng(it.latitude, it.longitude)} ?: LatLng(0.0,0.0)
+        position = CameraPosition.fromLatLngZoom(latlng, 10f)
+    }
+
+    state.location.value?.let {
+        state.locationListener?.onLocationChanged(it)
+        cameraPositionState.position = CameraPosition.fromLatLngZoom(LatLng(it.latitude, it.longitude), 10f)
+    }
+
+    Scaffold(
+        floatingActionButton = {
+            Column {
+                AnimatedVisibility(
+                    !state.FABOpen.value,
+                    enter = expandVertically(clip = true) + fadeIn(),
+                    exit = shrinkVertically(clip = true) + fadeOut()
+                ) {
+                    FloatingActionButton({
+                        state.FABOpen.value = true
+                    }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "Options")
+                    }
+                }
+                AnimatedVisibility(
+                    state.FABOpen.value,
+                    enter = expandVertically(clip = true) + fadeIn(),
+                    exit = shrinkVertically(clip = true) + fadeOut(),
+                ) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(20.dp)
+                    ) {
+                        FloatingActionButton({
+                        }) {
+                            Icon(Icons.Default.GroupAdd, "New/Join Group")
+                        }
+                        FloatingActionButton({
+                            state.FABOpen.value = false
+                        }) {
+                            Icon(Icons.Default.Close, contentDescription = "close")
+                        }
+                    }
+
+                }
+            }
+        },
+        floatingActionButtonPosition = FabPosition.End
+    ) {innerPadding ->
+        Box(Modifier.padding(innerPadding)) {
+
+        }
+        GoogleMap(
+            modifier = Modifier.fillMaxSize().padding(innerPadding),
+            properties = MapProperties(
+                isMyLocationEnabled = true
+            ),
+            cameraPositionState = cameraPositionState,
+            locationSource = object: LocationSource {
+                override fun activate(p0: LocationSource.OnLocationChangedListener) {
+                    state.locationListener = p0
+                }
+
+                override fun deactivate() {
+                    state.locationListener = null
+                }
+            }
+        ) {
+            //
+        }
+    }
 }
 
 
@@ -351,7 +605,24 @@ fun Greeting(name: String, modifier: Modifier = Modifier) {
 
 @Preview(showBackground = true)
 @Composable
-fun GreetingPreview() {
+fun LoginPreview() {
     val viewmodel = MainActivityViewModel()
+    viewmodel.ui.value = UIState.Login()
+    MainContent(viewmodel)
+}
+
+@Preview(showBackground = true)
+@Composable
+fun RegisterPreview() {
+    val viewmodel = MainActivityViewModel()
+    viewmodel.ui.value = UIState.Register()
+    MainContent(viewmodel)
+}
+
+@Preview(showBackground = true)
+@Composable
+fun MapPreview() {
+    val viewmodel = MainActivityViewModel()
+    viewmodel.ui.value = UIState.Map("george123", "")
     MainContent(viewmodel)
 }
