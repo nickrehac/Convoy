@@ -3,6 +3,7 @@ import org.jetbrains.kotlin.konan.properties.Properties
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.google.gms.google.services)
     //id("com.google.android.libraries.mapsplatform.secrets-gradle-plugin")
 }
 
@@ -68,6 +69,7 @@ dependencies {
     implementation(libs.play.services.location)
     implementation(libs.volley)
     implementation(libs.androidx.compose.material.icons.extended)
+    implementation(libs.firebase.messaging)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
