@@ -115,6 +115,11 @@ sealed class UIState: ViewModel() {
         val FABOpen: MutableState<Boolean> = mutableStateOf(false),
         val location: MutableState<Location?> = mutableStateOf(null),
         var locationListener: LocationSource.OnLocationChangedListener? = null,
+
+        val showNewConvoyDialog: MutableState<Boolean> = mutableStateOf(false),
+        val showJoinConvoyDialog: MutableState<Boolean> = mutableStateOf(false),
+        val showLeaveConvoyDialog: MutableState<Boolean> = mutableStateOf(false),
+        val showEndConvoyDialog: MutableState<Boolean> = mutableStateOf(false)
     ) : UIState()
 }
 
@@ -173,7 +178,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun MainContent(vm: MainActivityViewModel, onConvoyStart: () -> Unit, onConvoyEnd: () -> Unit) {
+fun MainContent(vm: MainActivityViewModel, onConvoyStart: (String) -> Unit, onConvoyEnd: () -> Unit) {
     val currentUI = vm.ui.value
     ConvoyTheme {
         when (currentUI) {

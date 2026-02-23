@@ -8,8 +8,14 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Close
@@ -18,6 +24,7 @@ import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.GroupOff
 import androidx.compose.material.icons.filled.GroupRemove
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FabPosition
 import androidx.compose.material3.FloatingActionButton
@@ -25,10 +32,19 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import com.google.android.gms.maps.LocationSource
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
@@ -36,18 +52,89 @@ import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.rememberCameraPositionState
 
+
+@Composable
+fun ConfirmDialog(title: String, confirm: String, onDismissRequest: () -> Unit = {}, onConfirm: () -> Unit = {}) {
+    Dialog(onDismissRequest) {
+        Card(Modifier.width(IntrinsicSize.Max)) {
+            Column(Modifier.padding(20.dp)) {
+                Text(title)
+                Spacer(Modifier.height(10.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    TextButton(onDismissRequest) {
+                        Text("Cancel")
+                    }
+                    TextButton(onConfirm) {
+                        Text(confirm)
+                    }
+                }
+            }
+        }
+
+    }
+}
+
+@Preview
+@Composable
+fun ConfirmDialogPreview() {
+    ConfirmDialog(
+        "Are you sure you want to do this? this is a big decision!",
+        "Why not?"
+    )
+}
+@Preview
+@Composable
+fun JoinConvoyDialog(
+    onDismissRequest: () -> Unit = {},
+    validateConvoy: (String) -> Boolean = {false},
+    onJoinConvoy: (String) -> Unit = {}
+) {
+    var convoyID: String by remember{mutableStateOf("")}
+    var inputError: Boolean by remember{mutableStateOf(false)}
+    Dialog(onDismissRequest) {
+        Card {
+            Column(Modifier.padding(20.dp)) {
+                Text("Join a convoy:")
+                TextField(
+                    convoyID,
+                    {convoyID = it},
+                    label = {Text("Convoy ID")},
+                    isError = inputError
+                )
+                if(inputError) Text("Invalid Convoy ID!", color = TextFieldDefaults.colors().errorTextColor)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    TextButton(onDismissRequest) {
+                        Text("Cancel")
+                    }
+                    TextButton({
+                        if (validateConvoy(convoyID)) {
+                            onJoinConvoy(convoyID)
+                        } else {
+                            inputError = true
+                        }
+                    }) {
+                        Text("Join")
+                    }
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MapPage(
     state: UIState.Map,
     onLogOut: () -> Unit,
-    onConvoyStart: () -> Unit,
+    onConvoyStart: (String) -> Unit,
     onConvoyEnd: () -> Unit
 ) {
     val cameraPositionState = rememberCameraPositionState {
         val latlng: LatLng = state.location.value?.let{LatLng(it.latitude, it.longitude)} ?: LatLng(0.0,0.0)
         position = CameraPosition.fromLatLngZoom(latlng, 10f)
     }
+
+
 
     state.location.value?.let {
         state.locationListener?.onLocationChanged(it)
@@ -99,8 +186,7 @@ fun MapPage(
 
                         } else {
                             FloatingActionButton({
-                                state.convoyID.value = ""
-                                state.isConvoyHost.value = true
+                                state.showNewConvoyDialog.value = true
                             }) {
                                 Column {
                                     Icon(Icons.Default.GroupAdd, "New Group")
@@ -108,8 +194,7 @@ fun MapPage(
                                 }
                             }
                             FloatingActionButton({
-                                state.convoyID.value = ""
-                                state.isConvoyHost.value = false
+                                state.showJoinConvoyDialog.value = true
                             }) {
                                 Column {
                                     Icon(Icons.Default.Group, "Join Group")
@@ -145,6 +230,38 @@ fun MapPage(
             )
         }
     ) {innerPadding ->
+        if (state.showNewConvoyDialog.value) ConfirmDialog(
+            "Start new convoy?",
+            "Start",
+            {state.showNewConvoyDialog.value = false},
+            {
+                //something lmao
+            }
+        )
+        if(state.showLeaveConvoyDialog.value) ConfirmDialog(
+            "Leave current convoy?",
+            "Leave",
+            {state.showLeaveConvoyDialog.value = false},
+            {
+                //
+            }
+        )
+        if(state.showEndConvoyDialog.value) ConfirmDialog(
+            "End current convoy? All members will be removed!",
+            "End",
+            {state.showEndConvoyDialog.value = false},
+            {
+                //
+            }
+        )
+
+        if (state.showJoinConvoyDialog.value) JoinConvoyDialog(
+            {state.showJoinConvoyDialog.value = false},
+            {
+                false
+            },
+            {}
+        )
         Box(Modifier.padding(innerPadding)) {
 
         }
